@@ -2,28 +2,13 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
+const { MongoClient, ServerApiVersion } = require("mongodb");
 const dotenv = require("dotenv");
-
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 5000;
-const client = new MongoClient(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
 
-let usersCollection, transactionsCollection;
-
-client.connect((err) => {
-  if (err) throw err;
-  const db = client.db("mfs");
-  usersCollection = db.collection("users");
-  transactionsCollection = db.collection("transactions");
-  console.log("Connected to MongoDB");
-});
+dotenv.config();
 
 app.use(cors());
 app.use(express.json());
@@ -47,41 +32,69 @@ const adminMiddleware = (req, res, next) => {
   next();
 };
 
-// Register User or Agent
-app.post("/api/register", async (req, res) => {
-  const { name, mobileNumber, email, pin, role } = req.body;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dbn21dt.mongodb.net/?appName=Cluster0`;
 
-  if (!name || !mobileNumber || !email || !pin || !role) {
-    return res.status(400).json({ msg: "Please enter all fields" });
-  }
-
-  try {
-    let user = await usersCollection.findOne({
-      $or: [{ mobileNumber }, { email }],
-    });
-    if (user) {
-      return res.status(400).json({ msg: "User already exists" });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPin = await bcrypt.hash(pin, salt);
-
-    user = {
-      name,
-      mobileNumber,
-      email,
-      pin: hashedPin,
-      status: "pending",
-      balance: role === "agent" ? 10000 : 0,
-      role,
-    };
-
-    await usersCollection.insertOne(user);
-    res.status(201).json({ msg: "User registered, pending admin approval" });
-  } catch (err) {
-    res.status(500).send("Server error");
-  }
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
 });
+
+async function run() {
+  try {
+    // Connect the client to the server	(optional starting in v4.7)
+    await client.connect();
+    const database = client.db("payBangla");
+    const usersCollection = database.collection("user");
+
+    // Register User or Agent
+    app.post("/api/register", async (req, res) => {
+      const { name, mobileNumber, email, pin, role } = req.body;
+
+      if (!name || !mobileNumber || !email || !pin || !role) {
+        return res.status(400).json({ msg: "Please enter all fields" });
+      }
+
+      try {
+        let user = await usersCollection.findOne({
+          $or: [{ mobileNumber }, { email }],
+        });
+        if (user) {
+          return res.status(400).json({ msg: "User already exists" });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPin = await bcrypt.hash(pin, salt);
+
+        user = {
+          name,
+          mobileNumber,
+          email,
+          pin: hashedPin,
+          status: "pending",
+          balance: role === "agent" ? 10000 : 40,
+          role,
+        };
+
+        await usersCollection.insertOne(user);
+        res
+          .status(201)
+          .json({ msg: "User registered, pending admin approval" });
+      } catch (err) {
+        res.status(500).send("Server error");
+      }
+    });
+
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+  } finally {
+  }
+}
+run().catch(console.dir);
 
 // Login
 
